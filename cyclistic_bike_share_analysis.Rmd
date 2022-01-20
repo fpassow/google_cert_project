@@ -1,0 +1,245 @@
+---
+title: "Cyclistic Bike Share Analysis"
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: inline
+---
+
+This is an analysis of rides data from from "Cyclistic", a fictional bike-share company. Users remove a bike from one of the company's many stations around Chicago, and then return it to the same station or any other station. This is a "ride".
+
+The company has two kinds of users, "casual" users and "members". Members pay a yearly fee instead of paying by the ride or by the day.
+
+# The Question
+How do annual members and casual riders use Cyclistic bikes differently?
+
+# The Data
+The data is really data shared by a real bike share company. CSV files of data about individual trips was downloaded from here: https://divvy-tripdata.s3.amazonaws.com/index.html
+
+Data is available under this licence: https://ride.divvybikes.com/data-license-agreement
+
+We will use data from the last twelve complete months, December 2020 through November 2021.
+
+
+
+First, load all the .csv's into a single data frame:
+```{r, message=FALSE}
+library("tidyverse")
+library("lubridate")
+library("here")
+```
+
+```{r}
+load_a_month <- function(month_str) {
+  read_csv(
+    here("data", 
+        "2_unzipped", 
+         paste(month_str, "-divvy-tripdata", sep=""), 
+         paste(month_str, "-divvy-tripdata.csv", sep="")
+    ),
+    show_col_types = FALSE
+  )
+}
+
+df <- rbind(load_a_month("202012"), load_a_month("202101"), load_a_month("202102"),
+            load_a_month("202103"), load_a_month("202104"), load_a_month("202105"), 
+            load_a_month("202106"), load_a_month("202107"), load_a_month("202108"), 
+            load_a_month("202109"), load_a_month("202110"), load_a_month("202111"))
+
+print(paste("Total rows: ",nrow(df)))
+```
+
+
+Look at the column names.
+```{r}
+names(df)
+```
+
+Check for duplicate rows
+```{r}
+sum(duplicated(df))
+```
+
+
+Check columns for missing values.
+```{r}
+for (col in colnames(df)) {
+  print(paste(col, sum(is.na(df[,col]))))
+}
+```
+
+The columns with no missing values and are sufficient for the analysis.Select them.
+Compute a column of ride durations (in minutes). 
+And compute a day_of_week column.
+```{r}
+rides <- df |> 
+         select(ride_id, rideable_type, started_at, ended_at, start_lat, start_lng, member_casual) |>
+         mutate(duration=(as.numeric(ended_at) - as.numeric(started_at))/60, day_of_week=wday(started_at))
+rides
+```
+
+
+Make sure ride_id's are unique.
+```{r}
+rides$ride_id |> duplicated() |> sum()
+```
+
+
+Some rides were recorded as ending before they started and have negative durations:
+```{r}
+min(rides$duration)
+```
+
+
+Remove rides with negative duration. Customer told us those were due to maintenance activities.
+```{r}
+rides <- rides|> filter(duration > 0)
+```
+
+
+The cleaned data:
+```{r}
+rides
+```
+
+
+
+# Trip Durations
+
+Check for outliers and other strangeneess.
+```{r}
+rides |> arrange(desc(duration)) |> select(started_at, ended_at, duration, member_casual)
+```
+
+Some "rides" were weeks long. But the longest were by casual users. We should ask the customer if these bikes maybe were not returned and eventually found, or something like that.
+
+Checking members' rides only, we see that their longest rides are much shorter. Just a few days.
+```{r}
+rides |> arrange(desc(duration)) |> select(started_at, ended_at, duration, member_casual) |> filter(member_casual=='member')
+```
+
+Count rides longer than 4 hours:
+```{r}
+nrow(rides |> filter(duration > 4*60))
+```
+
+
+# Compare trip durations.
+```{r echo = FALSE, warning = FALSE}
+ggplot(data=rides, aes(duration)) + 
+  geom_histogram(bins=100) +
+  xlim(c(0, 120)) +
+  facet_wrap(~member_casual)
+```
+
+# Summarize by Duration and Day of Week
+We see that casual riders' trips have a longer average duration and a longer maximum duration. And the most popular day for casual riders is Saturday. While the most popular day for members is Wednesday.
+```{r}
+getmode <- function(v) {
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+day_names = c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday")
+
+rides |> group_by(member_casual) |> 
+         summarize(mean_duration=mean(duration), 
+                   max_duration=max(duration), 
+                   most_popular_day=day_names[getmode(day_of_week)])
+```
+
+
+# Analyze by Hour of Day and Day of Week
+```{r}
+member_trips <- rides|> filter(member_casual=="member")
+casual_trips <- rides|> filter(member_casual=="casual")
+```
+
+# Number of casual users' rides started in each hour
+For casual rides, week day trips peak at evening commute time. Weekends have a smoother distribution and peak earlier. Ridership stays higher Friday and Saturday night and continues into the small hours of Saturday and Sunday morning.
+```{r echo = FALSE, warning = FALSE}
+ggplot(data=casual_trips, aes(hour(started_at))) + 
+  geom_histogram(binwidth=1) +
+  facet_wrap(wday(casual_trips$started_at, label=TRUE))
+```
+
+# Number of members' rides started in each hour
+Member trips have clear peaks at morning and evening commute times. However,the evening peak is always higher. Weekends have a smooth distribution which is highest in mid afternoon. Friday and Saturday nights have higher ridership which continues into the small hours of the next morning.
+```{r echo = FALSE, warning = FALSE}
+ggplot(data=member_trips, aes(hour(started_at))) + 
+  geom_histogram(binwidth=1) +
+  facet_wrap(wday(member_trips$started_at, label=TRUE))
+```
+
+# Analyze by Day of Week and by Month
+
+Looking at casual trips by day of week and by month. Ridership is much lower during the cold months. Weekend ridership is higher than weekday ridership.
+```{r echo = FALSE, warning = FALSE}
+ggplot(data=casual_trips, aes(wday(started_at))) + 
+  geom_histogram(binwidth=1) +
+  facet_wrap(month(casual_trips$started_at, label=TRUE))
+```
+
+Member trips, by day of week and month. Members are more likely to ride all year, even in colder months. And in many months they ride more on weekdays than on weekends.
+
+```{r echo = FALSE, warning = FALSE}
+ggplot(data=member_trips, aes(wday(started_at))) + 
+  geom_histogram(binwidth=1) +
+  facet_wrap(month(member_trips$started_at, label=TRUE))
+```
+
+
+
+# Investigate rideable_type
+
+```{r}
+table(rides |> select(member_casual, rideable_type))
+```
+
+
+# Conclusions
+
+Members and casual riders have similar patterns on the weekends. Rides have a smooth distribution over time with the peak in the middle of the afternoon. And members definitely do ride more in months with nicer weather than they do in the winter. So we can conclude that both groups ride recreationally on weekends. 
+
+Members weekday riding shows clear peaks at commute times. And our main conclusion is that members are more likely than casual riders to use Cyclistic bikes for commuting.
+
+However, the evening commute peak is higher. This, plus the fact that member usage goes up in nicer months and down in colder months, suggests that members do not strictly depend on the bikes for their commute, and use them more after work when they have more time flexibility and/or are starting their evening's recreation.
+
+Casual riders' weekday rides peak at the evening commute time (not at the weekend peak time) and have a small bump around the morning commute. So some casual riders are using Cyclistic bikes for commuting. And they might be a good target for campaigns to convert them into members.
+
+
+# Store summarized data
+
+Summarize by day of week and hour of day and export this much smaller data set. 
+
+```{r}
+ride_counts <- 
+  rides |>
+  select(member_casual, started_at, duration) |>
+  group_by(member_casual, start_hour=floor_date(started_at, "1 hour")) |>
+  summarize(n=n(), avg_duration=mean(duration)) |>
+  mutate(start_hour=as.character(start_hour), day_of_week=wday(start_hour, label=TRUE))
+ride_counts
+```
+
+Save the result.
+```{r}
+write_csv(ride_counts, "counts_by_hour_and_weekday.csv")
+```
+
+Summarize by month and export.
+
+```{r}
+monthly_summary <- 
+  rides |>
+  mutate(month=month(started_at, label=TRUE)) |>
+  select(member_casual, month, duration) |>
+  group_by(member_casual, month) |>
+  summarize(n=n(), avg_duration=mean(duration))
+monthly_summary
+```
+
+Save the result.
+```{r}
+write_csv(monthly_summary, "monthly_summary.csv")
+```
