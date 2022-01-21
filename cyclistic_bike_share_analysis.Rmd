@@ -21,9 +21,14 @@ Data is available under this licence: https://ride.divvybikes.com/data-license-a
 
 We will use data from the last twelve complete months, December 2020 through November 2021.
 
+To run this notebook:
+
+1. Create a subdirectory "data"
+2. Download zip files for December 2020 through November 2021 into data/1_raw_downloads
+3. Unzip files into data/2_unzipped to create files with paths like data/2_unzipped/202012-divvy-tripdata/202012-divvy-tripdata.csv
 
 
-First, load all the .csv's into a single data frame:
+Load all the .csv's into a single data frame:
 ```{r, message=FALSE}
 library("tidyverse")
 library("lubridate")
