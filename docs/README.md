@@ -1,4 +1,4 @@
-# Final Project for the Google Data Analyst Certification Course
+# Final Project for the Google Data Analytics Certificate Course
 
 This is an analysis of rides data from "Cyclistic", a fictional bike-share company. Users remove a bike from one of the company's many stations around Chicago, and then return it to the same station or any other station. This is a "ride".
 
